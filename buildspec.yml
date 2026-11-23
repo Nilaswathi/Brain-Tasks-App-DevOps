@@ -1,0 +1,46 @@
+version: 0.2
+
+env:
+  exported-variables:
+    - IMAGE_TAG
+    - IMAGE_URI
+
+phases:
+  install:
+    commands:
+      - echo "Installing kubectl"
+      - curl -fLO https://dl.k8s.io/release/v1.37.2/bin/linux/amd64/kubectl
+      - install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
+      - kubectl version --client
+
+  pre_build:
+    commands:
+      - echo "Preparing AWS and ECR authentication"
+      - export AWS_ACCOUNT_ID=$(aws sts get-caller-identity --query Account --output text)
+      - export ECR_REPO=brain-tasks-repo
+      - export REPOSITORY_URI=${AWS_ACCOUNT_ID}.dkr.ecr.${AWS_DEFAULT_REGION}.amazonaws.com/${ECR_REPO}
+      - export IMAGE_TAG=$(echo ${CODEBUILD_RESOLVED_SOURCE_VERSION} | cut -c 1-7)
+      - export IMAGE_URI=${REPOSITORY_URI}:${IMAGE_TAG}
+      - aws ecr get-login-password --region ${AWS_DEFAULT_REGION} | docker login --username AWS --password-stdin ${REPOSITORY_URI}
+      - echo "Image URI is ${IMAGE_URI}"
+      - aws eks update-kubeconfig --region ${AWS_DEFAULT_REGION} --name brain-tasks-cluster
+
+  build:
+    commands:
+      - echo "Building Docker image"
+      - docker build -t ${IMAGE_URI} .
+      - docker tag ${IMAGE_URI} ${REPOSITORY_URI}:latest
+      - docker push ${IMAGE_URI}
+      - docker push ${REPOSITORY_URI}:latest
+
+  post_build:
+    commands:
+      - echo "Deploying updated image to EKS"
+      - kubectl set image deployment/brain-tasks brain-tasks=${IMAGE_URI}
+      - kubectl rollout status deployment/brain-tasks --timeout=180s
+      - kubectl get pods -o wide
+      - echo "Deployment completed"
+
+artifacts:
+  files:
+    - '**/*'
