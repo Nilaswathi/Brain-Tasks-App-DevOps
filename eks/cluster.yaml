@@ -1,0 +1,33 @@
+apiVersion: eksctl.io/v1alpha5
+kind: ClusterConfig
+
+metadata:
+  name: brain-tasks-cluster
+  region: ap-south-1
+
+iam:
+  withOIDC: true
+
+cloudWatch:
+  clusterLogging:
+    enableTypes:
+      - api
+      - audit
+      - authenticator
+      - controllerManager
+      - scheduler
+
+vpc:
+  nat:
+    gateway: Disable
+
+managedNodeGroups:
+  - name: brain-tasks-nodes
+    instanceType: t3.medium
+    desiredCapacity: 2
+    minSize: 1
+    maxSize: 2
+    volumeSize: 20
+    privateNetworking: false
+    labels:
+      role: worker
